@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dental receptionist demo</title>
+  <style>
+    :root { color-scheme: light; font: 16px/1.5 system-ui, sans-serif; color: #1d2939; background: #f4f7fb; }
+    body { max-width: 760px; margin: 0 auto; padding: 24px 16px; }
+    h1 { margin-bottom: 4px; }
+    .note { color: #475467; margin-top: 0; }
+    .warning { border-left: 4px solid #d97706; background: #fff7ed; padding: 12px 16px; border-radius: 4px; }
+    #messages { list-style: none; padding: 0; min-height: 240px; max-height: 50vh; overflow-y: auto; }
+    #messages li { margin: 12px 0; padding: 10px 14px; border-radius: 10px; white-space: pre-wrap; }
+    .assistant { background: white; border: 1px solid #d0d5dd; margin-right: 12%; }
+    .user { background: #eaf2ff; margin-left: 12%; }
+    form { display: flex; gap: 8px; }
+    input { flex: 1; min-width: 0; padding: 10px; font: inherit; }
+    button { padding: 9px 14px; font: inherit; cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: .55; }
+    .controls { display: flex; gap: 8px; margin-top: 10px; align-items: center; flex-wrap: wrap; }
+    #status { color: #475467; }
+    @media (max-width: 500px) { form { flex-wrap: wrap; } form input { flex-basis: 100%; } }
+  </style>
+</head>
+<body>
+  <h1>Dental receptionist demo</h1>
+  <p class="note">A small local demo. No API key, paid AI service, or model download is needed.</p>
+  <div class="warning">
+    <strong>Please use fictional details.</strong> Replies come from simple local
+    rules, not a generative AI model. The app keeps contact details in the
+    Codespace's memory until it stops. Optional microphone transcription is
+    handled by your browser and may be sent to the browser vendor's speech
+    service; use typing if you do not want to use that feature.
+  </div>
+
+  <ol id="messages" aria-live="polite"></ol>
+  <form id="chat-form">
+    <label for="message" class="note">Message</label>
+    <input id="message" name="message" maxlength="1000" autocomplete="off" required>
+    <button id="send" type="submit">Send</button>
+  </form>
+  <div class="controls">
+    <button id="mic" type="button">Speak</button>
+    <button id="stop-speaking" type="button">Stop voice</button>
+    <label><input id="speak-replies" type="checkbox" checked> Read replies aloud</label>
+    <span id="status" role="status"></span>
+  </div>
+  <p class="note">
+    The Speak button uses browser speech recognition when available. Replies
+    are spoken with a voice available to your browser. Speech features and
+    microphone permissions vary by browser and device.
+  </p>
+
+  <script>
+    const messages = document.querySelector("#messages");
+    const input = document.querySelector("#message");
+    const status = document.querySelector("#status");
+    const sendButton = document.querySelector("#send");
+    const micButton = document.querySelector("#mic");
+    const speakReplies = document.querySelector("#speak-replies");
+    const sessionId = crypto.randomUUID();
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    function addMessage(who, text) {
+      const item = document.createElement("li");
+      item.className = who;
+      item.textContent = `${who === "user" ? "You" : "Receptionist"}: ${text}`;
+      messages.append(item);
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    async function sendMessage(message) {
+      addMessage("user", message);
+      sendButton.disabled = true;
+      status.textContent = "Thinking…";
+      try {
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: sessionId, message })
+        });
+        if (!response.ok) throw new Error(`Server returned ${response.status}`);
+        const data = await response.json();
+        addMessage("assistant", data.reply);
+        if (speakReplies.checked && "speechSynthesis" in window) {
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.speak(new SpeechSynthesisUtterance(data.reply));
+        }
+        status.textContent = "";
+      } catch (error) {
+        addMessage("assistant", `I couldn't reach the local demo. ${error.message}`);
+        status.textContent = "Check that the Python demo is running.";
+      } finally {
+        sendButton.disabled = false;
+        input.focus();
+      }
+    }
+
+    document.querySelector("#chat-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const message = input.value.trim();
+      if (!message) return;
+      input.value = "";
+      await sendMessage(message);
+    });
+
+    document.querySelector("#stop-speaking").addEventListener("click", () => {
+      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    });
+
+    if (!Recognition) {
+      micButton.disabled = true;
+      status.textContent = "Speech recognition isn't supported here; type messages instead.";
+    } else {
+      micButton.addEventListener("click", () => {
+        const recognition = new Recognition();
+        recognition.lang = "en-US";
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
+        recognition.onstart = () => { status.textContent = "Listening…"; };
+        recognition.onerror = (event) => {
+          status.textContent = `Microphone/speech error: ${event.error}. You can type instead.`;
+        };
+        recognition.onend = () => {
+          if (status.textContent === "Listening…") status.textContent = "";
+        };
+        recognition.onresult = async (event) => {
+          const transcript = event.results[0][0].transcript.trim();
+          status.textContent = "";
+          if (transcript) await sendMessage(transcript);
+        };
+        recognition.start();
+      });
+    }
+
+    addMessage(
+      "assistant",
+      "Hello! This free demo uses scripted replies, not an AI language model. " +
+      "I can answer a few general visit questions or take an unconfirmed " +
+      "appointment request. Please use fictional details. How can I help?"
+    );
+  </script>
+</body>
+</html>

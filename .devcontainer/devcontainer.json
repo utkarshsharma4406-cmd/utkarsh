@@ -1,0 +1,10 @@
+{
+  "forwardPorts": [8000],
+  "portsAttributes": {
+    "8000": {
+      "label": "Dental receptionist demo",
+      "onAutoForward": "notify",
+      "visibility": "private"
+    }
+  }
+}
